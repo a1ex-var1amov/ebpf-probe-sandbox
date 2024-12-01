@@ -2,44 +2,38 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
 
-// eBPF program attached to the tracepoint for `execve` syscall
+// Define the expected tracepoint context structure
+struct trace_event_raw_sys_enter {
+    long unsigned int common_type;
+    long unsigned int common_flags;
+    long unsigned int common_preempt_count;
+    int common_pid;
+    long unsigned int id;
+    long unsigned int args[6];
+};
+
 SEC("tracepoint/syscalls/sys_enter_execve")
 int handle_execve(struct trace_event_raw_sys_enter *ctx) {
-    // Extract the command and its arguments
-    const char *filename = (const char *)ctx->args[0];
-    const char *const *argv = (const char *const *)ctx->args[1];
+    const char *filename;
+    const char *const *argv;
 
-    // Read the command name
-    char command[16];
-    bpf_core_read_user_str(&command, sizeof(command), filename);
+    // Access arguments directly from the context
+    bpf_probe_read_user(&filename, sizeof(filename), (void *)ctx->args[0]);
+    bpf_probe_read_user(&argv, sizeof(argv), (void *)ctx->args[1]);
 
-    // Check if the command name matches "cat"
-    if (bpf_strncmp(command, "cat", 3) != 0) {
-        return 0; // Exit if the command is not "cat"
+    // Read the filename
+    char buf[16];
+    bpf_probe_read_user(buf, sizeof(buf), filename);
+
+    // Check if the command is "cat"
+    if (__builtin_memcmp(buf, "cat", 3) != 0) {
+        return 0;
     }
 
-    // Prepare a buffer to hold arguments
-    char arg_buf[128] = {0};
+    // Log the command name
+    bpf_printk("Hello! Detected 'cat' command: %s\n", buf);
 
-    // Concatenate the first 5 arguments into a single string
-    #pragma unroll
-    for (int i = 0; i < 5; i++) { // Limit to 5 arguments
-        const char *arg; // Pointer to the current argument
-        bpf_core_read_user(&arg, sizeof(arg), &argv[i]); // Read the argument pointer
-        if (!arg) {
-            break; // Exit loop if no more arguments
-        }
-        // Append the argument to the buffer
-        bpf_core_read_user_str(&arg_buf + bpf_strlen(arg_buf), sizeof(arg_buf) - bpf_strlen(arg_buf), arg);
-        bpf_strncat(arg_buf, " ", sizeof(arg_buf)); // Add space between arguments
-    }
-
-    // Write a message to the kernel ring buffer (visible in dmesg)
-    bpf_printk("Hello! Detected 'cat' command: %s, args: %s\n", command, arg_buf);
-
-    return 0; // Exit the eBPF program
+    return 0;
 }
 
-// Required license declaration for eBPF programs
-char LICENSE[] SEC("license") = "BSD";
-
+char LICENSE[] SEC("license") = "GPL";

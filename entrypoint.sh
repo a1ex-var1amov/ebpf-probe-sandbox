@@ -1,11 +1,14 @@
 #!/bin/bash
 set -e
 
+# Directory for the eBPF files
+WORKDIR="/app"
+
 echo "Compiling eBPF program..."
-clang -O2 -target bpf -c bpf_program.bpf.c -o bpf_program.bpf.o
+clang -O2 -target bpf -c $WORKDIR/bpf_program.bpf.c -o $WORKDIR/bpf_program.bpf.o
 
 echo "Compiling user-space loader..."
-gcc -o main main.c -lbpf
+gcc -o $WORKDIR/main $WORKDIR/main.c -lbpf
 
-echo "Loading eBPF program..."
-./main
+echo "Running user-space loader to attach eBPF program..."
+$WORKDIR/main
